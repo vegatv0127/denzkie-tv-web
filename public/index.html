@@ -53,7 +53,6 @@
         var(--bg);
       color: var(--text);
       min-height: 100vh;
-      overflow-y: overlay;
     }
 
     button, input, select { font: inherit; color: inherit; }
@@ -412,7 +411,7 @@
         </div>
 
         <div class="video-box">
-          <video id="videoEl" controls playsinline autoplay crossorigin="anonymous"></video>
+          <video id="videoEl" controls playsinline autoplay></video>
         </div>
 
         <div class="player-toolbar">
@@ -645,7 +644,7 @@
           state.hasMore = false;
         }
         state.posts = reset ? fresh : [...state.posts, ...fresh];
-        if (state.tab === 'browse') renderGrid(state.posts);
+        if (state.tab === 'browse') { renderGrid(state.posts); requestAnimationFrame(() => setTimeout(checkNearBottom, 120)); }
 
         const inf = document.getElementById('infiniteStatus');
         if (!state.hasMore && state.posts.length > 0) {
@@ -665,13 +664,22 @@
       }
     }
 
-    const observer = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && state.tab === 'browse' && state.hasMore && !state.loadingMore && state.posts.length > 0) {
+    function checkNearBottom() {
+      if (state.tab !== 'browse' || !state.hasMore || state.loadingMore || state.posts.length === 0) return;
+      const sentinel = document.getElementById('scrollSentinel');
+      if (!sentinel) return;
+      const rect = sentinel.getBoundingClientRect();
+      if (rect.top <= window.innerHeight + 450) {
         state.page += 1;
         loadPosts(false);
       }
-    }, { rootMargin: '320px' });
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting) checkNearBottom();
+    }, { rootMargin: '450px' });
     observer.observe(document.getElementById('scrollSentinel'));
+    window.addEventListener('scroll', checkNearBottom, { passive: true });
+    window.addEventListener('resize', checkNearBottom, { passive: true });
 
     function switchTab(tab, refresh = true) {
       state.tab = tab;
@@ -905,13 +913,25 @@
 
       try {
         const { streams } = await api(`/api/streams?provider=${encodeURIComponent(provider)}&link=${encodeURIComponent(link)}&type=${encodeURIComponent(type)}`);
-        state.currentStreams = streams || [];
+        const rankStream = s => {
+          const link = String(s.link || '').toLowerCase();
+          const type = String(s.type || '').toLowerCase();
+          const srv = String(s.server || '').toLowerCase();
+          const hasHeaders = s.headers && Object.keys(s.headers).length > 0;
+          if (srv.includes('download only')) return 99;
+          if (type === 'm3u8' || link.includes('.m3u8')) return 0;
+          if ((type === 'mp4' || link.includes('.mp4')) && !hasHeaders) return 1;
+          if (type === 'mp4' || link.includes('.mp4')) return 2;
+          if (!hasHeaders) return 3;
+          return 4;
+        };
+        state.currentStreams = (streams || []).slice().sort((a, b) => rankStream(a) - rankStream(b));
         if (!state.currentStreams.length) {
           document.getElementById('serverPills').innerHTML = '<span style="color:#fca5a5;">No streams returned by provider.</span>';
           return;
         }
         document.getElementById('serverPills').innerHTML = state.currentStreams.map((s, idx) =>
-          `<button class="chip ${idx === 0 ? 'active' : ''}" onclick="selectStream(${idx})">${esc(s.server)}${s.quality ? ' (' + esc(s.quality) + ')' : ''}</button>`
+          `<button class="chip ${idx === 0 ? 'active' : ''}" onclick="selectStream(${idx})">${esc(s.server)}${s.type ? ' [' + esc(s.type) + ']' : ''}${s.quality ? ' (' + esc(s.quality) + ')' : ''}</button>`
         ).join('');
         selectStream(0);
       } catch (e) {
@@ -953,15 +973,28 @@
       qSel.style.display = 'none';
       if (state.hls) { state.hls.destroy(); state.hls = null; }
 
-      const proxied = `/api/proxy?url=${encodeURIComponent(s.link)}${encodeHeaders(s.headers)}`;
       const isHls = s.type === 'm3u8' || /\.m3u8(\?|$)/i.test(s.link);
+      const customHeaderKeys = Object.keys(s.headers || {}).filter(k => k.toLowerCase() !== 'user-agent');
+      const needsProxy = isHls || customHeaderKeys.length > 0;
+      const playUrl = needsProxy
+        ? `/api/proxy?url=${encodeURIComponent(s.link)}${encodeHeaders(s.headers)}`
+        : s.link;
 
       const prog = getStore('denzkie_progress', {});
       const savedTime = prog[state.currentPlayKey] || 0;
+      video.onerror = () => {
+        const nextBtn = idx + 1 < state.currentStreams.length
+          ? `<button class="btn btn-red btn-sm" onclick="selectStream(${idx + 1})">Try Next Server</button>`
+          : '';
+        document.getElementById('playerNote').innerHTML =
+          `<span style="color:#fca5a5;">Browser could not play this ${esc(s.type || 'stream')} directly (${esc(s.server)}).</span>
+           ${nextBtn}
+           <a class="btn btn-ghost btn-sm" href="${esc(s.link)}" target="_blank">Open / Download in Browser</a>`;
+      };
 
       if (isHls && window.Hls && Hls.isSupported()) {
         state.hls = new Hls();
-        state.hls.loadSource(proxied);
+        state.hls.loadSource(playUrl);
         state.hls.attachMedia(video);
         state.hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
           if (data.levels?.length > 1) {
@@ -973,7 +1006,7 @@
           video.play().catch(() => {});
         });
       } else {
-        video.src = proxied;
+        video.src = playUrl;
         video.onloadedmetadata = () => {
           if (savedTime > 5 && savedTime < (video.duration || Infinity) - 5) {
             video.currentTime = savedTime;
@@ -986,7 +1019,7 @@
       onSpeedChange();
 
       document.getElementById('playerNote').innerHTML =
-        `<span>Server: <b>${esc(s.server)}</b></span>
+        `<span>Server: <b>${esc(s.server)}</b> (${needsProxy ? 'proxied' : 'direct CDN'})</span>
          <a class="btn btn-ghost btn-sm" href="${esc(s.link)}" target="_blank">Open Direct URL</a>`;
     }
 

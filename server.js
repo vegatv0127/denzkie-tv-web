@@ -248,7 +248,7 @@ app.get('/api/img', async (req, res) => {
   }
 });
 
-app.get('/api/proxy', async (req, res) => {
+app.all('/api/proxy', async (req, res) => {
   try {
     const targetUrl = String(req.query.url || '');
     if (!/^https?:\/\//i.test(targetUrl)) return res.status(400).send('Invalid URL');
@@ -277,42 +277,50 @@ app.get('/api/proxy', async (req, res) => {
       }).join('\n');
     };
 
-    if (/\.m3u8(\?|$)/i.test(targetUrl)) {
-      const upstream = await axios.get(targetUrl, { headers: reqHeaders, responseType: 'text', timeout: 20000 });
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.send(rewriteM3u8(upstream.data, targetUrl));
-    }
-
-    const upstream = await axios.get(targetUrl, {
+    const upstream = await fetch(targetUrl, {
+      method: req.method === 'HEAD' ? 'HEAD' : 'GET',
       headers: reqHeaders,
-      responseType: 'stream',
-      timeout: 30000,
-      maxRedirects: 5,
-      validateStatus: s => s >= 200 && s < 400,
+      redirect: 'follow',
     });
 
-    const ct = upstream.headers['content-type'] || '';
-    if (ct.includes('mpegurl')) {
-      const chunks = [];
-      for await (const c of upstream.data) chunks.push(c);
+    const finalUrl = upstream.url || targetUrl;
+    const ct = (upstream.headers.get('content-type') || '').toLowerCase();
+    const isM3u8 = /\.m3u8(\?|$)/i.test(finalUrl) || ct.includes('mpegurl');
+
+    if (isM3u8 && req.method !== 'HEAD') {
+      const text = await upstream.text();
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.send(rewriteM3u8(Buffer.concat(chunks).toString('utf8'), targetUrl));
+      return res.send(rewriteM3u8(text, finalUrl));
     }
 
     res.status(upstream.status);
     for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
-      if (upstream.headers[h]) res.setHeader(h, upstream.headers[h]);
+      const val = upstream.headers.get(h);
+      if (val) res.setHeader(h, val);
     }
     res.setHeader('Access-Control-Allow-Origin', '*');
-    upstream.data.pipe(res);
-    res.on('close', () => upstream.data.destroy?.());
+    if (req.method === 'HEAD' || !upstream.body) return res.end();
+
+    const reader = upstream.body.getReader();
+    let closed = false;
+    res.on('close', () => {
+      closed = true;
+      reader.cancel().catch(() => {});
+    });
+    while (!closed) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!res.write(Buffer.from(value))) {
+        await new Promise(resolve => res.once('drain', resolve));
+      }
+    }
+    if (!closed) res.end();
   } catch (err) {
-    res.status(502).send(err.message);
+    if (!res.headersSent) res.status(502).send(err.message);
+    else res.end();
   }
 });
-
 app.get('*', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
