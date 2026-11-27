@@ -909,7 +909,7 @@
       document.getElementById('serverPills').innerHTML = '<span style="color:var(--muted);">Extracting stream links...</span>';
       document.getElementById('playerNote').textContent = '';
       document.getElementById('qualitySelect').style.display = 'none';
-      document.getElementById('playerModal').classList.add('open');
+      document.getElementById('playerModal').classList.add('open'); setVideoLoading(true, 'Extracting stream links...');
 
       try {
         const { streams } = await api(`/api/streams?provider=${encodeURIComponent(provider)}&link=${encodeURIComponent(link)}&type=${encodeURIComponent(type)}`);
@@ -927,7 +927,7 @@
         };
         state.currentStreams = (streams || []).slice().sort((a, b) => rankStream(a) - rankStream(b));
         if (!state.currentStreams.length) {
-          document.getElementById('serverPills').innerHTML = '<span style="color:#fca5a5;">No streams returned by provider.</span>';
+          setVideoLoading(false); document.getElementById('serverPills').innerHTML = '<span style="color:#fca5a5;">No streams returned by provider.</span>';
           return;
         }
         document.getElementById('serverPills').innerHTML = state.currentStreams.map((s, idx) =>
@@ -935,7 +935,7 @@
         ).join('');
         selectStream(0);
       } catch (e) {
-        document.getElementById('serverPills').innerHTML = `<span style="color:#fca5a5;">Error: ${esc(e.message)}</span>`;
+        setVideoLoading(false); document.getElementById('serverPills').innerHTML = `<span style="color:#fca5a5;">Error: ${esc(e.message)}</span>`;
       }
     }
 
@@ -982,7 +982,9 @@
 
       const prog = getStore('denzkie_progress', {});
       const savedTime = prog[state.currentPlayKey] || 0;
+      setVideoLoading(true, 'Buffering video...');
       video.onerror = () => {
+        setVideoLoading(false);
         const nextBtn = idx + 1 < state.currentStreams.length
           ? `<button class="btn btn-red btn-sm" onclick="selectStream(${idx + 1})">Try Next Server</button>`
           : '';
@@ -1063,7 +1065,19 @@
       else if (e.key.toLowerCase() === 'f') toggleFullscreen();
     });
 
+    function setVideoLoading(show, msg = 'Loading stream...') {
+      const el = document.getElementById('videoLoading');
+      if (!el) return;
+      if (msg) document.getElementById('videoLoadingText').textContent = msg;
+      el.classList.toggle('show', !!show);
+    }
+    const _v = document.getElementById('videoEl');
+    _v.addEventListener('canplay', () => setVideoLoading(false));
+    _v.addEventListener('playing', () => setVideoLoading(false));
+    _v.addEventListener('waiting', () => setVideoLoading(true, 'Buffering...'));
+
     function closePlayer() {
+      setVideoLoading(false);
       const video = document.getElementById('videoEl');
       video.pause();
       video.removeAttribute('src');
