@@ -8,128 +8,352 @@
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
   <style>
     :root {
-      --bg: #070709;
-      --surface: #11131a;
-      --surface-2: #181b24;
-      --border: rgba(255,255,255,0.09);
+      --bg: #06070a;
+      --surface: #0f1118;
+      --surface-2: #171a24;
+      --surface-3: #1f2432;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.16);
       --red: #ef233c;
       --red-dark: #b91c1c;
-      --text: #f9fafb;
-      --muted: #9ca3af;
+      --text: #f8fafc;
+      --muted: #94a3b8;
     }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Auto-hide dark scrollbars */
+    html, .modal {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    html.is-scrolling, html:hover, .modal.is-scrolling, .modal:hover {
+      scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+      background: transparent;
+      border-radius: 999px;
+      transition: background 0.25s ease;
+    }
+    .is-scrolling::-webkit-scrollbar-thumb,
+    *:hover > ::-webkit-scrollbar-thumb,
+    .modal.is-scrolling::-webkit-scrollbar-thumb,
+    .modal:hover::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.28);
+    }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(239, 35, 60, 0.65) !important; }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
       background:
-        radial-gradient(circle at 50% -15%, rgba(239,35,60,0.22), transparent 45%),
+        radial-gradient(ellipse 80% 45% at 50% -10%, rgba(239, 35, 60, 0.22), transparent 65%),
+        radial-gradient(ellipse 50% 35% at 95% 15%, rgba(148, 163, 184, 0.06), transparent 60%),
         var(--bg);
       color: var(--text);
       min-height: 100vh;
+      overflow-y: overlay;
     }
+
     button, input, select { font: inherit; color: inherit; }
+
+    /* Topbar */
     .topbar {
       position: sticky; top: 0; z-index: 30;
       display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
-      padding: 12px 20px;
-      background: rgba(7,7,9,0.88);
-      backdrop-filter: blur(14px);
+      padding: 12px 22px;
+      background: rgba(6, 7, 10, 0.82);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
       border-bottom: 1px solid var(--border);
     }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 900; font-size: 1.15rem; cursor: pointer; }
-    .brand img { width: 38px; height: 38px; border-radius: 10px; object-fit: cover; }
+    .brand {
+      display: flex; align-items: center; gap: 10px;
+      font-weight: 900; font-size: 1.18rem; cursor: pointer; letter-spacing: -0.01em;
+    }
+    .brand img {
+      width: 38px; height: 38px; border-radius: 10px; object-fit: cover;
+      box-shadow: 0 0 18px rgba(239, 35, 60, 0.35);
+    }
     .brand span {
-      background: linear-gradient(135deg, #fff, #9ca3af);
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    .nav-tabs { display: flex; gap: 6px; margin-left: 8px; }
+
+    .nav-tabs { display: flex; gap: 6px; margin-left: 6px; }
     .tab-btn {
       padding: 8px 14px; border-radius: 10px; border: 1px solid transparent;
-      background: transparent; color: var(--muted); cursor: pointer; font-weight: 600; font-size: 0.9rem;
+      background: transparent; color: var(--muted); cursor: pointer;
+      font-weight: 600; font-size: 0.88rem; transition: 0.16s ease;
     }
-    .tab-btn.active { background: rgba(239,35,60,0.16); border-color: rgba(239,35,60,0.45); color: #fff; }
-    .controls { display: flex; flex: 1; gap: 10px; justify-content: flex-end; align-items: center; min-width: 260px; }
+    .tab-btn:hover { color: #fff; background: rgba(255,255,255,0.04); }
+    .tab-btn.active {
+      background: rgba(239, 35, 60, 0.16);
+      border-color: rgba(239, 35, 60, 0.45);
+      color: #fff;
+    }
+
+    .controls {
+      display: flex; flex: 1; gap: 8px; justify-content: flex-end; align-items: center; min-width: 260px;
+    }
     .select, .input {
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 10px; padding: 9px 12px; font-size: 0.9rem; outline: none;
+      border-radius: 11px; padding: 9px 12px; font-size: 0.88rem; outline: none;
+      transition: border-color 0.16s ease;
     }
-    .select { max-width: 200px; }
+    .select:focus, .input:focus { border-color: rgba(239, 35, 60, 0.6); }
+    .select { max-width: 210px; cursor: pointer; }
     .search-box { display: flex; flex: 1; max-width: 320px; gap: 6px; }
     .search-box .input { width: 100%; }
+
     .btn {
-      padding: 9px 15px; border-radius: 10px; border: none; cursor: pointer;
-      font-weight: 700; font-size: 0.88rem; transition: 0.15s ease;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 9px 15px; border-radius: 11px; border: none; cursor: pointer;
+      font-weight: 700; font-size: 0.86rem; transition: 0.16s ease;
     }
-    .btn-red { background: linear-gradient(135deg, var(--red), var(--red-dark)); color: #fff; }
-    .btn-ghost { background: var(--surface); border: 1px solid var(--border); color: #fff; }
-    .btn:hover { filter: brightness(1.1); }
+    .btn:active { transform: scale(0.97); }
+    .btn-red {
+      background: linear-gradient(135deg, var(--red), var(--red-dark));
+      color: #fff; box-shadow: 0 6px 20px rgba(239, 35, 60, 0.25);
+    }
+    .btn-red:hover { box-shadow: 0 8px 24px rgba(239, 35, 60, 0.42); filter: brightness(1.06); }
+    .btn-ghost { background: var(--surface-2); border: 1px solid var(--border); color: #e2e8f0; }
+    .btn-ghost:hover { background: var(--surface-3); border-color: var(--border-strong); color: #fff; }
+    .btn-sm { padding: 6px 11px; font-size: 0.8rem; border-radius: 9px; }
 
-    .wrap { max-width: 1280px; margin: 0 auto; padding: 20px; }
-    .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px; margin-bottom: 14px; }
+    .wrap { max-width: 1340px; margin: 0 auto; padding: 18px 22px 48px; }
+
+    /* Category tab row with scroll icons */
+    .chips-bar {
+      position: relative;
+      display: flex; align-items: center;
+      margin-bottom: 18px;
+    }
+    .chips-bar.hidden { display: none; }
+    .chips {
+      display: flex; gap: 8px; overflow-x: auto; scroll-behavior: smooth;
+      padding: 4px 2px;
+      scrollbar-width: none;
+      width: 100%;
+    }
+    .chips::-webkit-scrollbar { display: none; }
     .chip {
-      flex-shrink: 0; padding: 7px 14px; border-radius: 999px;
+      flex-shrink: 0; padding: 8px 16px; border-radius: 999px;
       background: var(--surface); border: 1px solid var(--border);
-      color: var(--muted); cursor: pointer; font-size: 0.85rem; font-weight: 600;
+      color: var(--muted); cursor: pointer; font-size: 0.84rem; font-weight: 600;
+      transition: 0.16s ease;
     }
-    .chip.active { background: var(--red); border-color: var(--red); color: #fff; }
+    .chip:hover { color: #fff; border-color: var(--border-strong); background: var(--surface-2); }
+    .chip.active {
+      background: linear-gradient(135deg, var(--red), var(--red-dark));
+      border-color: transparent; color: #fff;
+      box-shadow: 0 4px 16px rgba(239, 35, 60, 0.35);
+    }
+    .scroll-arrow {
+      position: absolute; top: 50%; transform: translateY(-50%); z-index: 5;
+      width: 34px; height: 34px; border-radius: 50%;
+      border: 1px solid var(--border-strong);
+      background: rgba(15, 17, 24, 0.92);
+      backdrop-filter: blur(8px);
+      color: #fff; cursor: pointer;
+      display: none; align-items: center; justify-content: center;
+      font-size: 1.15rem; font-weight: 800; line-height: 1;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.6);
+      transition: 0.15s ease;
+    }
+    .scroll-arrow:hover { background: var(--red); border-color: var(--red); }
+    .scroll-arrow.visible { display: flex; }
+    .scroll-arrow.left { left: 0; }
+    .scroll-arrow.right { right: 0; }
 
+    .section-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px; color: var(--muted); font-size: 0.86rem;
+    }
+    .section-bar strong { color: #fff; font-size: 1.05rem; }
+
+    /* Grid & Cards */
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(162px, 1fr));
+      gap: 18px;
     }
     .card {
+      position: relative;
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: 14px; overflow: hidden; cursor: pointer;
-      transition: transform 0.18s ease, border-color 0.18s ease;
+      border-radius: 16px; overflow: hidden; cursor: pointer;
+      transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
       display: flex; flex-direction: column;
     }
-    .card:hover { transform: translateY(-4px); border-color: rgba(239,35,60,0.6); }
-    .poster { aspect-ratio: 2 / 3; width: 100%; object-fit: cover; background: #0d0f14; display: block; }
-    .card-body { padding: 10px 11px; }
+    .card:hover {
+      transform: translateY(-5px);
+      border-color: rgba(239, 35, 60, 0.65);
+      box-shadow: 0 14px 32px rgba(0, 0, 0, 0.55), 0 0 24px rgba(239, 35, 60, 0.14);
+    }
+    .poster-wrap { position: relative; aspect-ratio: 2 / 3; overflow: hidden; background: #0b0d13; }
+    .poster {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+      transition: transform 0.3s ease;
+    }
+    .card:hover .poster { transform: scale(1.05); }
+    .poster-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, transparent 50%, rgba(6,7,10,0.92) 100%);
+      opacity: 0.7; transition: opacity 0.2s ease;
+    }
+    .card-badge {
+      position: absolute; top: 8px; left: 8px;
+      padding: 3px 8px; border-radius: 7px;
+      background: rgba(6, 7, 10, 0.78); border: 1px solid rgba(255,255,255,0.12);
+      font-size: 0.68rem; font-weight: 700; color: #e2e8f0; text-transform: uppercase;
+    }
+    .play-hover {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      opacity: 0; transition: opacity 0.2s ease;
+    }
+    .card:hover .play-hover { opacity: 1; }
+    .play-circle {
+      width: 46px; height: 46px; border-radius: 50%;
+      background: rgba(239, 35, 60, 0.92); color: #fff;
+      display: grid; place-items: center; font-size: 1rem;
+      box-shadow: 0 6px 22px rgba(239, 35, 60, 0.5);
+    }
+    .card-body { padding: 10px 12px 12px; }
     .card-title {
-      font-size: 0.88rem; font-weight: 700; line-height: 1.3;
+      font-size: 0.88rem; font-weight: 700; line-height: 1.32;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .card-sub { font-size: 0.75rem; color: var(--muted); margin-top: 4px; }
-    .status { text-align: center; padding: 48px 16px; color: var(--muted); }
-    .load-more { display: flex; justify-content: center; margin-top: 26px; }
+    .card-sub { font-size: 0.74rem; color: var(--muted); margin-top: 4px; }
 
+    /* Skeleton Loader */
+    .skel {
+      border-radius: 16px; overflow: hidden;
+      background: var(--surface); border: 1px solid var(--border);
+    }
+    .skel-img {
+      aspect-ratio: 2/3;
+      background: linear-gradient(90deg, #11131b 25%, #1a1e2b 50%, #11131b 75%);
+      background-size: 200% 100%; animation: shimmer 1.3s infinite;
+    }
+    .skel-line {
+      height: 12px; margin: 12px; border-radius: 6px;
+      background: #1a1e2b;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .status { text-align: center; padding: 54px 16px; color: var(--muted); }
+    .infinite-status {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      padding: 26px 0 8px; color: var(--muted); font-size: 0.88rem;
+    }
+    .spinner {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2.5px solid rgba(255,255,255,0.15);
+      border-top-color: var(--red);
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Modals */
     .modal-bg {
       position: fixed; inset: 0; z-index: 50;
-      background: rgba(0,0,0,0.82); backdrop-filter: blur(8px);
+      background: rgba(0, 0, 0, 0.84); backdrop-filter: blur(10px);
       display: none; align-items: center; justify-content: center; padding: 16px;
     }
     .modal-bg.open { display: flex; }
     .modal {
-      width: 100%; max-width: 860px; max-height: 90vh; overflow-y: auto;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 20px; padding: 22px; position: relative;
+      width: 100%; max-width: 920px; max-height: 92vh; overflow-y: auto;
+      background: var(--surface); border: 1px solid var(--border-strong);
+      border-radius: 22px; position: relative;
+      box-shadow: 0 28px 80px rgba(0,0,0,0.75);
     }
     .close-x {
-      position: sticky; top: 0; float: right;
-      width: 34px; height: 34px; border-radius: 10px;
-      background: var(--surface-2); border: 1px solid var(--border);
-      color: #fff; cursor: pointer; font-weight: 800;
+      position: absolute; top: 14px; right: 14px; z-index: 10;
+      width: 36px; height: 36px; border-radius: 11px;
+      background: rgba(15, 17, 24, 0.85); border: 1px solid var(--border-strong);
+      color: #fff; cursor: pointer; font-weight: 800; backdrop-filter: blur(8px);
     }
-    .meta-head { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; }
-    .meta-poster { width: 170px; aspect-ratio: 2/3; object-fit: cover; border-radius: 14px; background: #000; }
-    .meta-info { flex: 1; min-width: 230px; }
-    .meta-info h2 { font-size: 1.55rem; margin-bottom: 8px; }
-    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-    .tag { font-size: 0.75rem; padding: 3px 9px; border-radius: 999px; background: var(--surface-2); color: #d1d5db; }
-    .synopsis { color: var(--muted); font-size: 0.92rem; line-height: 1.55; margin-bottom: 14px; }
+    .close-x:hover { background: var(--red); border-color: var(--red); }
 
-    .list-section { margin-top: 16px; }
-    .list-section h4 { margin-bottom: 10px; font-size: 0.95rem; color: #e5e7eb; }
+    /* Upgraded Detail Modal */
+    .detail-hero {
+      position: relative; padding: 28px 24px 22px; overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-backdrop {
+      position: absolute; inset: -20px;
+      background-size: cover; background-position: center;
+      filter: blur(26px) saturate(1.25) brightness(0.36);
+      transform: scale(1.1);
+    }
+    .detail-gradient {
+      position: absolute; inset: 0;
+      background: linear-gradient(180deg, rgba(15,17,24,0.35) 0%, var(--surface) 100%);
+    }
+    .meta-head { position: relative; z-index: 2; display: flex; flex-wrap: wrap; gap: 22px; align-items: flex-end; }
+    .meta-poster {
+      width: 165px; aspect-ratio: 2/3; object-fit: cover; border-radius: 16px;
+      background: #000; border: 1px solid rgba(255,255,255,0.16);
+      box-shadow: 0 14px 36px rgba(0,0,0,0.65);
+    }
+    .meta-info { flex: 1; min-width: 240px; }
+    .meta-info h2 { font-size: clamp(1.35rem, 3vw, 1.9rem); font-weight: 800; margin-bottom: 10px; line-height: 1.18; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+    .tag {
+      font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); color: #e2e8f0;
+    }
+    .tag.rating { background: rgba(234, 179, 8, 0.16); border-color: rgba(234,179,8,0.35); color: #fde047; }
+    .synopsis { color: #cbd5e1; font-size: 0.92rem; line-height: 1.6; margin-bottom: 14px; }
+    .cast-line { font-size: 0.82rem; color: var(--muted); margin-bottom: 14px; }
+    .meta-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+    .detail-body { padding: 20px 24px 24px; }
+    .pack-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
     .item-row {
       display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
-      padding: 11px 14px; border-radius: 12px;
+      padding: 12px 14px; border-radius: 13px;
       background: var(--surface-2); border: 1px solid var(--border);
-      margin-bottom: 8px;
+      margin-bottom: 8px; transition: border-color 0.15s ease;
     }
-    .video-box { width: 100%; background: #000; border-radius: 14px; overflow: hidden; margin-bottom: 14px; }
-    video { width: 100%; max-height: 68vh; display: block; background: #000; }
-    .server-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .item-row:hover { border-color: rgba(239, 35, 60, 0.45); }
+    .item-row.watched { border-left: 3px solid var(--red); }
+    .ep-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 200px; }
+    .ep-thumb { width: 88px; aspect-ratio: 16/9; object-fit: cover; border-radius: 8px; background: #000; flex-shrink: 0; }
+    .ep-desc { font-size: 0.78rem; color: var(--muted); margin-top: 3px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+    /* Upgraded Player Modal */
+    .player-shell { padding: 18px 20px 22px; }
+    .player-top {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 10px; padding-right: 44px; margin-bottom: 12px;
+    }
+    .player-title { font-size: 1.05rem; font-weight: 800; }
+    .player-sub { font-size: 0.78rem; color: var(--muted); }
+    .video-box {
+      position: relative; width: 100%; background: #000;
+      border-radius: 16px; overflow: hidden; border: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+    video { width: 100%; max-height: 66vh; display: block; background: #000; }
+    .player-toolbar {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 10px 14px; border-radius: 14px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    .toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .server-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    .player-note { font-size: 0.82rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+    @media (max-width: 640px) {
+      .topbar { padding: 10px 14px; }
+      .wrap { padding: 14px 14px 40px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 12px; }
+      .detail-hero, .detail-body { padding: 16px; }
+      .meta-poster { width: 120px; }
+    }
   </style>
 </head>
 <body>
@@ -154,40 +378,76 @@
   </header>
 
   <main class="wrap">
-    <div class="chips" id="catalogChips"></div>
-    <div id="contentArea"></div>
-    <div class="load-more" id="loadMoreWrap" style="display:none;">
-      <button class="btn btn-ghost" onclick="loadNextPage()">Load More</button>
+    <div class="chips-bar" id="chipsBar">
+      <button class="scroll-arrow left" id="chipLeft" onclick="scrollChips(-1)" aria-label="Scroll left">&#8249;</button>
+      <div class="chips" id="catalogChips" onscroll="updateChipArrows()"></div>
+      <button class="scroll-arrow right" id="chipRight" onclick="scrollChips(1)" aria-label="Scroll right">&#8250;</button>
     </div>
+
+    <div class="section-bar" id="sectionBar"></div>
+    <div id="contentArea"></div>
+    <div id="scrollSentinel" style="height: 2px;"></div>
+    <div class="infinite-status" id="infiniteStatus" style="display:none;"></div>
   </main>
 
-  <div class="modal-bg" id="detailModal">
+  <div class="modal-bg" id="detailModal" onclick="if(event.target===this) closeModal('detailModal')">
     <div class="modal">
       <button class="close-x" onclick="closeModal('detailModal')">✕</button>
       <div id="detailBody"></div>
     </div>
   </div>
 
-  <div class="modal-bg" id="playerModal">
-    <div class="modal" style="max-width:980px;">
+  <div class="modal-bg" id="playerModal" onclick="if(event.target===this) closePlayer()">
+    <div class="modal" style="max-width:1020px;">
       <button class="close-x" onclick="closePlayer()">✕</button>
-      <h3 id="playerTitle" style="margin-bottom:12px;"></h3>
-      <div class="video-box">
-        <video id="videoEl" controls playsinline autoplay></video>
+      <div class="player-shell">
+        <div class="player-top">
+          <div>
+            <div class="player-title" id="playerTitle"></div>
+            <div class="player-sub" id="playerSub"></div>
+          </div>
+          <div class="toolbar-group">
+            <button class="btn btn-red btn-sm" id="nextEpBtn" style="display:none;" onclick="playNextEpisode()">Next Episode &#9654;</button>
+          </div>
+        </div>
+
+        <div class="video-box">
+          <video id="videoEl" controls playsinline autoplay crossorigin="anonymous"></video>
+        </div>
+
+        <div class="player-toolbar">
+          <div class="toolbar-group">
+            <button class="btn btn-ghost btn-sm" onclick="seekBy(-10)">-10s</button>
+            <button class="btn btn-ghost btn-sm" onclick="seekBy(10)">+10s</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleFullscreen()">Fullscreen</button>
+          </div>
+          <div class="toolbar-group">
+            <select class="select" id="qualitySelect" style="padding:5px 9px; font-size:0.8rem; display:none;" onchange="onQualityChange()"></select>
+            <select class="select" id="speedSelect" style="padding:5px 9px; font-size:0.8rem;" onchange="onSpeedChange()">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1.0x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2.0x</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="server-pills" id="serverPills"></div>
+        <div class="player-note" id="playerNote"></div>
       </div>
-      <div class="server-pills" id="serverPills"></div>
-      <div id="playerNote" style="font-size:0.84rem; color:var(--muted);"></div>
     </div>
   </div>
 
-  <div class="modal-bg" id="sourceModal">
-    <div class="modal" style="max-width:540px;">
+  <div class="modal-bg" id="sourceModal" onclick="if(event.target===this) closeModal('sourceModal')">
+    <div class="modal" style="max-width:540px; padding:22px;">
       <button class="close-x" onclick="closeModal('sourceModal')">✕</button>
-      <h3 style="margin-bottom:10px;">Provider Source URL</h3>
+      <h3 style="margin-bottom:8px;">Provider Source URL</h3>
       <p style="color:var(--muted); font-size:0.9rem; margin-bottom:14px;">
         Enter a GitHub or raw manifest provider repository URL.
       </p>
-      <input class="input" id="sourceInput" style="width:100%; margin-bottom:14px;" />
+      <input class="input" id="sourceInput" style="width:100%; margin-bottom:16px;" />
       <div style="display:flex; gap:10px; justify-content:flex-end;">
         <button class="btn btn-ghost" onclick="resetSource()">Reset Default</button>
         <button class="btn btn-red" onclick="saveSource()">Save &amp; Reload</button>
@@ -203,17 +463,40 @@
       provider: localStorage.getItem('denzkie_provider') || '',
       catalog: [],
       filter: '',
+      filterTitle: 'Latest',
       query: '',
       page: 1,
       posts: [],
+      renderedItems: [],
+      seenLinks: new Set(),
+      hasMore: true,
+      loadingMore: false,
       tab: 'browse',
       hls: null,
+      currentStreams: [],
+      currentQueue: [],
+      currentQueueIndex: -1,
+      currentPlayKey: '',
+      currentMeta: null,
+      currentEpisodes: [],
+      activePackIndex: 0,
     };
 
     const imgUrl = url => url ? `/api/img?url=${encodeURIComponent(url)}` : '/logo.png';
     const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    const getList = k => { try { return JSON.parse(localStorage.getItem(k) || '[]'); } catch { return []; } };
-    const setList = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+    const getStore = (k, def = []) => { try { return JSON.parse(localStorage.getItem(k) || JSON.stringify(def)); } catch { return def; } };
+    const setStore = (k, v) => localStorage.setItem(k, JSON.stringify(v));
+
+    function bindAutoHideScroll(el, target) {
+      let t;
+      el.addEventListener('scroll', () => {
+        target.classList.add('is-scrolling');
+        clearTimeout(t);
+        t = setTimeout(() => target.classList.remove('is-scrolling'), 900);
+      }, { passive: true });
+    }
+    bindAutoHideScroll(window, document.documentElement);
+    document.querySelectorAll('.modal').forEach(m => bindAutoHideScroll(m, m));
 
     async function api(path) {
       const sep = path.includes('?') ? '&' : '?';
@@ -223,8 +506,14 @@
       return j;
     }
 
+    function showSkeletons(count = 12) {
+      document.getElementById('contentArea').innerHTML = `<div class="grid">${
+        Array.from({ length: count }, () => '<div class="skel"><div class="skel-img"></div><div class="skel-line"></div></div>').join('')
+      }</div>`;
+    }
+
     async function init() {
-      document.getElementById('contentArea').innerHTML = '<div class="status">Loading providers...</div>';
+      showSkeletons();
       try {
         const data = await api('/api/providers');
         state.providers = data.providers || [];
@@ -254,11 +543,12 @@
     async function loadProviderCatalog() {
       if (!state.provider) return;
       document.getElementById('catalogChips').innerHTML = '';
-      document.getElementById('contentArea').innerHTML = '<div class="status">Loading catalog...</div>';
+      showSkeletons();
       try {
         const data = await api(`/api/catalog?provider=${encodeURIComponent(state.provider)}`);
         state.catalog = [...(data.catalog || []), ...(data.genres || [])];
         state.filter = state.catalog[0]?.filter ?? '';
+        state.filterTitle = state.catalog[0]?.title ?? 'Catalog';
         renderChips();
         await loadPosts(true);
       } catch (e) {
@@ -267,17 +557,38 @@
     }
 
     function renderChips() {
+      const bar = document.getElementById('chipsBar');
       const el = document.getElementById('catalogChips');
-      if (state.tab !== 'browse') { el.innerHTML = ''; return; }
+      if (state.tab !== 'browse' || !state.catalog.length) {
+        bar.classList.add('hidden');
+        return;
+      }
+      bar.classList.remove('hidden');
       el.innerHTML = state.catalog.map((c, idx) =>
         `<button class="chip ${c.filter === state.filter && !state.query ? 'active' : ''}" onclick="selectFilter(${idx})">${esc(c.title)}</button>`
       ).join('');
+      requestAnimationFrame(updateChipArrows);
     }
+
+    function scrollChips(dir) {
+      document.getElementById('catalogChips').scrollBy({ left: dir * 280, behavior: 'smooth' });
+    }
+
+    function updateChipArrows() {
+      const el = document.getElementById('catalogChips');
+      const leftBtn = document.getElementById('chipLeft');
+      const rightBtn = document.getElementById('chipRight');
+      if (!el) return;
+      leftBtn.classList.toggle('visible', el.scrollLeft > 8);
+      rightBtn.classList.toggle('visible', el.scrollLeft + el.clientWidth < el.scrollWidth - 8);
+    }
+    window.addEventListener('resize', updateChipArrows);
 
     function selectFilter(idx) {
       state.query = '';
       document.getElementById('searchInput').value = '';
       state.filter = state.catalog[idx]?.filter ?? '';
+      state.filterTitle = state.catalog[idx]?.title ?? 'Catalog';
       renderChips();
       loadPosts(true);
     }
@@ -290,56 +601,111 @@
       loadPosts(true);
     }
 
+    function updateSectionBar() {
+      const bar = document.getElementById('sectionBar');
+      if (state.tab === 'watchlist') {
+        bar.innerHTML = `<strong>Watchlist</strong><span>${state.renderedItems.length} saved</span>`;
+      } else if (state.tab === 'history') {
+        bar.innerHTML = `<strong>Watch History</strong><span>${state.renderedItems.length} recent</span>`;
+      } else if (state.query) {
+        bar.innerHTML = `<strong>Search: "${esc(state.query)}"</strong><span>${state.posts.length} titles</span>`;
+      } else {
+        bar.innerHTML = `<strong>${esc(state.filterTitle || 'Browse')}</strong><span>${state.posts.length} titles</span>`;
+      }
+    }
+
     async function loadPosts(reset = true) {
+      if (state.loadingMore) return;
       if (reset) {
         state.page = 1;
         state.posts = [];
-        document.getElementById('contentArea').innerHTML = '<div class="status">Loading titles...</div>';
+        state.seenLinks.clear();
+        state.hasMore = true;
+        showSkeletons();
+        document.getElementById('infiniteStatus').style.display = 'none';
+      } else if (!state.hasMore) {
+        return;
       }
+
+      state.loadingMore = true;
+      if (!reset) {
+        const inf = document.getElementById('infiniteStatus');
+        inf.style.display = 'flex';
+        inf.innerHTML = '<div class="spinner"></div><span>Loading more titles...</span>';
+      }
+
       try {
         const qParam = state.query ? `&q=${encodeURIComponent(state.query)}` : '';
         const data = await api(`/api/posts?provider=${encodeURIComponent(state.provider)}&filter=${encodeURIComponent(state.filter)}&page=${state.page}${qParam}`);
-        const items = (data.posts || []).map(p => ({ ...p, provider: p.provider || state.provider }));
-        state.posts = reset ? items : [...state.posts, ...items];
-        renderGrid(state.posts);
-        document.getElementById('loadMoreWrap').style.display = items.length >= 6 ? 'flex' : 'none';
+        const rawItems = (data.posts || []).map(p => ({ ...p, provider: p.provider || state.provider }));
+        const fresh = rawItems.filter(p => p.link && !state.seenLinks.has(p.link));
+        fresh.forEach(p => state.seenLinks.add(p.link));
+
+        if (!fresh.length || rawItems.length < 4) {
+          state.hasMore = false;
+        }
+        state.posts = reset ? fresh : [...state.posts, ...fresh];
+        if (state.tab === 'browse') renderGrid(state.posts);
+
+        const inf = document.getElementById('infiniteStatus');
+        if (!state.hasMore && state.posts.length > 0) {
+          inf.style.display = 'flex';
+          inf.innerHTML = '<span>End of catalog</span>';
+        } else {
+          inf.style.display = 'none';
+        }
       } catch (e) {
-        document.getElementById('contentArea').innerHTML = `<div class="status">Provider error: ${esc(e.message)}</div>`;
-        document.getElementById('loadMoreWrap').style.display = 'none';
+        if (reset) {
+          document.getElementById('contentArea').innerHTML = `<div class="status">Provider error: ${esc(e.message)}</div>`;
+        }
+        state.hasMore = false;
+        document.getElementById('infiniteStatus').style.display = 'none';
+      } finally {
+        state.loadingMore = false;
       }
     }
 
-    function loadNextPage() {
-      state.page += 1;
-      loadPosts(false);
-    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && state.tab === 'browse' && state.hasMore && !state.loadingMore && state.posts.length > 0) {
+        state.page += 1;
+        loadPosts(false);
+      }
+    }, { rootMargin: '320px' });
+    observer.observe(document.getElementById('scrollSentinel'));
 
     function switchTab(tab, refresh = true) {
       state.tab = tab;
-      ['browse','watchlist','history'].forEach(t => {
+      ['browse', 'watchlist', 'history'].forEach(t => {
         document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
       });
       renderChips();
       if (tab === 'browse') {
         if (refresh) renderGrid(state.posts);
       } else if (tab === 'watchlist') {
-        document.getElementById('loadMoreWrap').style.display = 'none';
-        renderGrid(getList('denzkie_watchlist'));
+        document.getElementById('infiniteStatus').style.display = 'none';
+        renderGrid(getStore('denzkie_watchlist'));
       } else {
-        document.getElementById('loadMoreWrap').style.display = 'none';
-        renderGrid(getList('denzkie_history'));
+        document.getElementById('infiniteStatus').style.display = 'none';
+        renderGrid(getStore('denzkie_history'));
       }
     }
 
     function renderGrid(items) {
+      state.renderedItems = items || [];
+      updateSectionBar();
       const el = document.getElementById('contentArea');
-      if (!items.length) {
+      if (!state.renderedItems.length) {
         el.innerHTML = '<div class="status">No titles found.</div>';
         return;
       }
-      el.innerHTML = `<div class="grid">${items.map(item => `
-        <div class="card" onclick='openDetail(${JSON.stringify(item).replace(/'/g, "&#39;")})'>
-          <img class="poster" loading="lazy" src="${imgUrl(item.image)}" onerror="this.src='/logo.png'" alt="${esc(item.title)}" />
+      el.innerHTML = `<div class="grid">${state.renderedItems.map((item, idx) => `
+        <div class="card" onclick="openDetailByIndex(${idx})">
+          <div class="poster-wrap">
+            <img class="poster" loading="lazy" src="${imgUrl(item.image)}" onerror="this.src='/logo.png'" alt="${esc(item.title)}" />
+            <div class="poster-overlay"></div>
+            ${item.tag ? `<span class="card-badge">${esc(item.tag)}</span>` : ''}
+            <div class="play-hover"><div class="play-circle">&#9654;</div></div>
+          </div>
           <div class="card-body">
             <div class="card-title">${esc(item.title)}</div>
             <div class="card-sub">${esc(item.provider || state.provider)}</div>
@@ -348,91 +714,163 @@
       `).join('')}</div>`;
     }
 
-    async function openDetail(item) {
+    async function openDetailByIndex(idx) {
+      const item = state.renderedItems[idx];
+      if (!item) return;
       const prov = item.provider || state.provider;
-      document.getElementById('detailBody').innerHTML = '<div class="status">Loading details...</div>';
+      document.getElementById('detailBody').innerHTML = '<div class="status"><div class="spinner" style="margin:0 auto 12px;"></div>Loading details...</div>';
       document.getElementById('detailModal').classList.add('open');
 
-      const hist = getList('denzkie_history').filter(x => x.link !== item.link);
+      const hist = getStore('denzkie_history').filter(x => x.link !== item.link);
       hist.unshift({ ...item, provider: prov });
-      setList('denzkie_history', hist.slice(0, 40));
+      setStore('denzkie_history', hist.slice(0, 40));
 
       try {
         const { meta } = await api(`/api/meta?provider=${encodeURIComponent(prov)}&link=${encodeURIComponent(item.link)}`);
-        const inWatch = getList('denzkie_watchlist').some(x => x.link === item.link);
-        const poster = meta.poster || meta.image || item.image;
-        const tags = (meta.tags || []).slice(0, 6).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+        state.currentMeta = { ...meta, _provider: prov, _item: item };
+        state.activePackIndex = 0;
+        renderDetailModal();
+      } catch (e) {
+        document.getElementById('detailBody').innerHTML = `<div class="status">Failed to load metadata: ${esc(e.message)}</div>`;
+      }
+    }
 
-        let linksHtml = '';
-        (meta.linkList || []).forEach((grp, idx) => {
-          if (grp.directLinks?.length) {
-            linksHtml += `<div class="list-section"><h4>${esc(grp.title || 'Play')}</h4>` +
-              grp.directLinks.map(dl => `
-                <div class="item-row">
-                  <span>${esc(dl.title || grp.title)}</span>
-                  <button class="btn btn-red" onclick='playStream(${JSON.stringify({ provider: prov, link: dl.link, type: dl.type || meta.type || "movie", title: `${meta.title} - ${dl.title || grp.title}` }).replace(/'/g, "&#39;")})'>Watch</button>
-                </div>
-              `).join('') + `</div>`;
-          } else if (grp.episodesLink) {
-            linksHtml += `
-              <div class="item-row">
-                <span>${esc(grp.title || 'Season')}</span>
-                <button class="btn btn-ghost" onclick='loadEpisodes(this, ${JSON.stringify({ provider: prov, url: grp.episodesLink, type: meta.type || "series", baseTitle: meta.title }).replace(/'/g, "&#39;")})'>Load Episodes</button>
-              </div>
-              <div id="eps-${idx}"></div>
-            `;
-          }
-        });
+    function renderDetailModal() {
+      const meta = state.currentMeta;
+      const item = meta._item;
+      const poster = meta.poster || meta.image || item.image;
+      const backdrop = meta.image || meta.poster || item.image;
+      const inWatch = getStore('denzkie_watchlist').some(x => x.link === item.link);
+      const tags = (meta.tags || []).slice(0, 6).map(t => `<span class="tag">${esc(t)}</span>`).join('');
+      const castLine = Array.isArray(meta.cast) && meta.cast.length
+        ? `<div class="cast-line"><strong>Cast:</strong> ${esc(meta.cast.slice(0, 6).join(', '))}</div>` : '';
 
-        document.getElementById('detailBody').innerHTML = `
+      const linkList = meta.linkList || [];
+      const packTabs = linkList.length > 1
+        ? `<div class="pack-tabs">${linkList.map((g, i) =>
+            `<button class="chip ${i === state.activePackIndex ? 'active' : ''}" onclick="selectPack(${i})">${esc(g.title || g.quality || ('Option ' + (i + 1)))}</button>`
+          ).join('')}</div>`
+        : '';
+
+      document.getElementById('detailBody').innerHTML = `
+        <div class="detail-hero">
+          <div class="detail-backdrop" style="background-image:url('${imgUrl(backdrop)}')"></div>
+          <div class="detail-gradient"></div>
           <div class="meta-head">
             <img class="meta-poster" src="${imgUrl(poster)}" onerror="this.src='/logo.png'" />
             <div class="meta-info">
               <h2>${esc(meta.title || item.title)}</h2>
               <div class="tags">
                 ${meta.type ? `<span class="tag">${esc(meta.type)}</span>` : ''}
-                ${meta.rating ? `<span class="tag">★ ${esc(meta.rating)}</span>` : ''}
+                ${meta.rating ? `<span class="tag rating">&#9733; ${esc(meta.rating)}</span>` : ''}
                 ${tags}
               </div>
               <p class="synopsis">${esc(meta.synopsis || 'No synopsis available.')}</p>
-              <button class="btn btn-ghost" id="watchBtn" onclick='toggleWatchlist(${JSON.stringify({ ...item, provider: prov, title: meta.title || item.title, image: poster }).replace(/'/g, "&#39;")})'>
-                ${inWatch ? '✓ In Watchlist' : '+ Add to Watchlist'}
-              </button>
+              ${castLine}
+              <div class="meta-actions">
+                <button class="btn btn-ghost" id="watchBtn" onclick="toggleWatchlist()">${inWatch ? '&#10003; In Watchlist' : '+ Add to Watchlist'}</button>
+                ${meta.trailerUrl ? `<a class="btn btn-ghost" href="${esc(meta.trailerUrl)}" target="_blank">Watch Trailer</a>` : ''}
+              </div>
             </div>
           </div>
-          ${linksHtml || '<div class="status">No playable links found for this title.</div>'}
-        `;
-      } catch (e) {
-        document.getElementById('detailBody').innerHTML = `<div class="status">Failed to load metadata: ${esc(e.message)}</div>`;
+        </div>
+        <div class="detail-body">
+          ${packTabs}
+          <div id="packContent"></div>
+        </div>
+      `;
+      renderActivePack();
+    }
+
+    function selectPack(idx) {
+      state.activePackIndex = idx;
+      document.querySelectorAll('.pack-tabs .chip').forEach((c, i) => c.classList.toggle('active', i === idx));
+      renderActivePack();
+    }
+
+    async function renderActivePack() {
+      const container = document.getElementById('packContent');
+      const meta = state.currentMeta;
+      const prov = meta._provider;
+      const grp = (meta.linkList || [])[state.activePackIndex];
+      const progMap = getStore('denzkie_progress', {});
+
+      if (!grp) {
+        container.innerHTML = '<div class="status">No playable links found for this title.</div>';
+        return;
+      }
+
+      if (grp.directLinks?.length) {
+        state.currentQueue = grp.directLinks.map(dl => ({
+          provider: prov,
+          link: dl.link,
+          type: dl.type || meta.type || 'movie',
+          title: `${meta.title} — ${dl.title || grp.title || 'Movie'}`,
+          sub: grp.title || '',
+        }));
+        container.innerHTML = grp.directLinks.map((dl, idx) => `
+          <div class="item-row ${progMap[dl.link] ? 'watched' : ''}">
+            <div class="ep-left">
+              ${dl.image ? `<img class="ep-thumb" src="${imgUrl(dl.image)}" />` : ''}
+              <div>
+                <strong>${esc(dl.title || grp.title || 'Play')}</strong>
+                ${dl.description ? `<div class="ep-desc">${esc(dl.description)}</div>` : ''}
+              </div>
+            </div>
+            <button class="btn btn-red" onclick="playFromQueue(${idx})">&#9654; Watch</button>
+          </div>
+        `).join('');
+        return;
+      }
+
+      if (grp.episodesLink) {
+        container.innerHTML = '<div class="status" style="padding:24px;"><div class="spinner" style="margin:0 auto 10px;"></div>Loading episodes...</div>';
+        try {
+          const { episodes } = await api(`/api/episodes?provider=${encodeURIComponent(prov)}&url=${encodeURIComponent(grp.episodesLink)}`);
+          state.currentEpisodes = episodes || [];
+          state.currentQueue = state.currentEpisodes.map(ep => ({
+            provider: prov,
+            link: ep.link,
+            type: meta.type || 'series',
+            title: `${meta.title} — ${ep.title}`,
+            sub: grp.title || '',
+          }));
+          if (!state.currentEpisodes.length) {
+            container.innerHTML = '<div class="status" style="padding:24px;">No episodes returned.</div>';
+            return;
+          }
+          container.innerHTML = state.currentEpisodes.map((ep, idx) => `
+            <div class="item-row ${progMap[ep.link] ? 'watched' : ''}">
+              <div class="ep-left">
+                ${ep.image ? `<img class="ep-thumb" loading="lazy" src="${imgUrl(ep.image)}" />` : ''}
+                <div>
+                  <strong>${esc(ep.title)}</strong>
+                  ${ep.description ? `<div class="ep-desc">${esc(ep.description)}</div>` : ''}
+                </div>
+              </div>
+              <button class="btn btn-red" onclick="playFromQueue(${idx})">&#9654; Watch</button>
+            </div>
+          `).join('');
+        } catch (e) {
+          container.innerHTML = `<div class="status" style="color:#fca5a5;">${esc(e.message)}</div>`;
+        }
       }
     }
 
-    function toggleWatchlist(item) {
-      let list = getList('denzkie_watchlist');
+    function toggleWatchlist() {
+      const meta = state.currentMeta;
+      const item = {
+        ...meta._item,
+        provider: meta._provider,
+        title: meta.title || meta._item.title,
+        image: meta.poster || meta.image || meta._item.image,
+      };
+      let list = getStore('denzkie_watchlist');
       const exists = list.some(x => x.link === item.link);
       list = exists ? list.filter(x => x.link !== item.link) : [item, ...list];
-      setList('denzkie_watchlist', list);
-      document.getElementById('watchBtn').textContent = exists ? '+ Add to Watchlist' : '✓ In Watchlist';
-    }
-
-    async function loadEpisodes(btn, opts) {
-      const container = btn.parentElement.nextElementSibling;
-      btn.disabled = true;
-      btn.textContent = 'Loading...';
-      try {
-        const { episodes } = await api(`/api/episodes?provider=${encodeURIComponent(opts.provider)}&url=${encodeURIComponent(opts.url)}`);
-        container.innerHTML = (episodes || []).map(ep => `
-          <div class="item-row" style="margin-left:14px;">
-            <span>${esc(ep.title)}</span>
-            <button class="btn btn-red" onclick='playStream(${JSON.stringify({ provider: opts.provider, link: ep.link, type: opts.type, title: `${opts.baseTitle} - ${ep.title}` }).replace(/'/g, "&#39;")})'>Watch</button>
-          </div>
-        `).join('') || '<div style="padding:8px;color:var(--muted);">No episodes returned.</div>';
-        btn.textContent = 'Loaded';
-      } catch (e) {
-        btn.disabled = false;
-        btn.textContent = 'Retry';
-        container.innerHTML = `<div style="color:#fca5a5;padding:8px;">${esc(e.message)}</div>`;
-      }
+      setStore('denzkie_watchlist', list);
+      document.getElementById('watchBtn').innerHTML = exists ? '+ Add to Watchlist' : '&#10003; In Watchlist';
+      if (state.tab === 'watchlist') renderGrid(list);
     }
 
     function encodeHeaders(h) {
@@ -441,48 +879,156 @@
       return '&h=' + encodeURIComponent(b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''));
     }
 
-    async function playStream({ provider, link, type, title }) {
+    function playFromQueue(idx) {
+      state.currentQueueIndex = idx;
+      const entry = state.currentQueue[idx];
+      if (!entry) return;
+      document.getElementById('nextEpBtn').style.display =
+        idx < state.currentQueue.length - 1 ? 'inline-flex' : 'none';
+      playStream(entry);
+    }
+
+    function playNextEpisode() {
+      if (state.currentQueueIndex + 1 < state.currentQueue.length) {
+        playFromQueue(state.currentQueueIndex + 1);
+      }
+    }
+
+    async function playStream({ provider, link, type, title, sub }) {
+      state.currentPlayKey = link;
       document.getElementById('playerTitle').textContent = title;
-      document.getElementById('serverPills').innerHTML = '<span style="color:var(--muted);">Fetching streams...</span>';
+      document.getElementById('playerSub').textContent = sub || provider;
+      document.getElementById('serverPills').innerHTML = '<span style="color:var(--muted);">Extracting stream links...</span>';
       document.getElementById('playerNote').textContent = '';
+      document.getElementById('qualitySelect').style.display = 'none';
       document.getElementById('playerModal').classList.add('open');
 
       try {
         const { streams } = await api(`/api/streams?provider=${encodeURIComponent(provider)}&link=${encodeURIComponent(link)}&type=${encodeURIComponent(type)}`);
-        if (!streams.length) {
+        state.currentStreams = streams || [];
+        if (!state.currentStreams.length) {
           document.getElementById('serverPills').innerHTML = '<span style="color:#fca5a5;">No streams returned by provider.</span>';
           return;
         }
-        document.getElementById('serverPills').innerHTML = streams.map((s, idx) =>
-          `<button class="chip ${idx === 0 ? 'active' : ''}" onclick='selectStream(${idx}, ${JSON.stringify(streams).replace(/'/g, "&#39;")})'>${esc(s.server)} ${s.quality ? '(' + esc(s.quality) + ')' : ''}</button>`
+        document.getElementById('serverPills').innerHTML = state.currentStreams.map((s, idx) =>
+          `<button class="chip ${idx === 0 ? 'active' : ''}" onclick="selectStream(${idx})">${esc(s.server)}${s.quality ? ' (' + esc(s.quality) + ')' : ''}</button>`
         ).join('');
-        selectStream(0, streams);
+        selectStream(0);
       } catch (e) {
         document.getElementById('serverPills').innerHTML = `<span style="color:#fca5a5;">Error: ${esc(e.message)}</span>`;
       }
     }
 
-    function selectStream(idx, streams) {
+    function srtToVtt(srt) {
+      return 'WEBVTT\n\n' + srt.replace(/\r+/g, '').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+    }
+
+    async function attachSubtitles(video, subtitles = []) {
+      video.querySelectorAll('track').forEach(t => t.remove());
+      for (let i = 0; i < subtitles.length; i++) {
+        const sub = subtitles[i];
+        if (!sub?.uri) continue;
+        try {
+          const res = await fetch(`/api/proxy?url=${encodeURIComponent(sub.uri)}`);
+          const text = await res.text();
+          const vtt = text.trimStart().startsWith('WEBVTT') ? text : srtToVtt(text);
+          const blobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
+          const track = document.createElement('track');
+          track.kind = 'subtitles';
+          track.label = sub.title || sub.language || `Sub ${i + 1}`;
+          track.srclang = sub.language || 'en';
+          track.src = blobUrl;
+          if (i === 0) track.default = true;
+          video.appendChild(track);
+        } catch {}
+      }
+    }
+
+    function selectStream(idx) {
       document.querySelectorAll('#serverPills .chip').forEach((c, i) => c.classList.toggle('active', i === idx));
-      const s = streams[idx];
+      const s = state.currentStreams[idx];
+      if (!s) return;
       const video = document.getElementById('videoEl');
+      const qSel = document.getElementById('qualitySelect');
+      qSel.style.display = 'none';
       if (state.hls) { state.hls.destroy(); state.hls = null; }
 
       const proxied = `/api/proxy?url=${encodeURIComponent(s.link)}${encodeHeaders(s.headers)}`;
       const isHls = s.type === 'm3u8' || /\.m3u8(\?|$)/i.test(s.link);
 
+      const prog = getStore('denzkie_progress', {});
+      const savedTime = prog[state.currentPlayKey] || 0;
+
       if (isHls && window.Hls && Hls.isSupported()) {
         state.hls = new Hls();
         state.hls.loadSource(proxied);
         state.hls.attachMedia(video);
+        state.hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+          if (data.levels?.length > 1) {
+            qSel.innerHTML = '<option value="-1">Auto Quality</option>' +
+              data.levels.map((l, i) => `<option value="${i}">${l.height ? l.height + 'p' : 'Level ' + (i + 1)}</option>`).join('');
+            qSel.style.display = 'inline-block';
+          }
+          if (savedTime > 5) video.currentTime = savedTime;
+          video.play().catch(() => {});
+        });
       } else {
         video.src = proxied;
+        video.onloadedmetadata = () => {
+          if (savedTime > 5 && savedTime < (video.duration || Infinity) - 5) {
+            video.currentTime = savedTime;
+          }
+          video.play().catch(() => {});
+        };
       }
-      video.play().catch(() => {});
+
+      attachSubtitles(video, s.subtitles || []);
+      onSpeedChange();
 
       document.getElementById('playerNote').innerHTML =
-        `Playing via proxy (${esc(s.server)}). If a browser cannot decode an MKV audio track, <a href="${esc(s.link)}" target="_blank" style="color:#fca5a5;text-decoration:underline;">open direct stream URL</a> in VLC or download it.`;
+        `<span>Server: <b>${esc(s.server)}</b></span>
+         <a class="btn btn-ghost btn-sm" href="${esc(s.link)}" target="_blank">Open Direct URL</a>`;
     }
+
+    function onQualityChange() {
+      if (state.hls) state.hls.currentLevel = parseInt(document.getElementById('qualitySelect').value, 10);
+    }
+    function onSpeedChange() {
+      document.getElementById('videoEl').playbackRate = parseFloat(document.getElementById('speedSelect').value) || 1;
+    }
+    function seekBy(sec) {
+      const v = document.getElementById('videoEl');
+      v.currentTime = Math.max(0, (v.currentTime || 0) + sec);
+    }
+    function toggleFullscreen() {
+      const box = document.querySelector('.video-box');
+      if (document.fullscreenElement) document.exitFullscreen();
+      else box.requestFullscreen?.().catch(() => {});
+    }
+
+    let lastSave = 0;
+    document.getElementById('videoEl').addEventListener('timeupdate', e => {
+      const now = Date.now();
+      if (!state.currentPlayKey || now - lastSave < 4000) return;
+      lastSave = now;
+      const v = e.target;
+      if (v.currentTime > 3) {
+        const prog = getStore('denzkie_progress', {});
+        prog[state.currentPlayKey] = Math.floor(v.currentTime);
+        setStore('denzkie_progress', prog);
+      }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (!document.getElementById('playerModal').classList.contains('open')) return;
+      const v = document.getElementById('videoEl');
+      if (e.key === 'Escape') closePlayer();
+      else if (e.key === ' ' && e.target.tagName !== 'BUTTON') { e.preventDefault(); v.paused ? v.play() : v.pause(); }
+      else if (e.key === 'ArrowLeft') seekBy(-10);
+      else if (e.key === 'ArrowRight') seekBy(10);
+      else if (e.key.toLowerCase() === 'm') v.muted = !v.muted;
+      else if (e.key.toLowerCase() === 'f') toggleFullscreen();
+    });
 
     function closePlayer() {
       const video = document.getElementById('videoEl');
