@@ -249,78 +249,207 @@ app.get('/api/img', async (req, res) => {
 });
 
 app.all('/api/proxy', async (req, res) => {
+  const ac = new AbortController();
+  let upstreamStream = null;
+  res.on('close', () => {
+    if (!res.writableEnded) {
+      ac.abort();
+      if (upstreamStream && typeof upstreamStream.destroy === 'function') {
+        upstreamStream.destroy();
+      }
+    }
+  });
+
   try {
     const targetUrl = String(req.query.url || '');
     if (!/^https?:\/\//i.test(targetUrl)) return res.status(400).send('Invalid URL');
 
     let customHeaders = {};
     if (req.query.h) {
-      try { customHeaders = JSON.parse(Buffer.from(String(req.query.h), 'base64url').toString('utf8')); } catch {}
+      try {
+        customHeaders = JSON.parse(Buffer.from(String(req.query.h), 'base64url').toString('utf8')) || {};
+      } catch {}
     }
 
-    const reqHeaders = { 'User-Agent': commonHeaders['User-Agent'], ...customHeaders };
+    const reqHeaders = {
+      'User-Agent': commonHeaders['User-Agent'],
+      'Accept-Encoding': 'identity',
+    };
+    const blocked = new Set(['host', 'connection', 'content-length', 'accept-encoding']);
+    for (const [k, v] of Object.entries(customHeaders)) {
+      if (v != null && !blocked.has(k.toLowerCase())) {
+        for (const existing of Object.keys(reqHeaders)) {
+          if (existing.toLowerCase() === k.toLowerCase()) delete reqHeaders[existing];
+        }
+        reqHeaders[k] = String(v);
+      }
+    }
     if (req.headers.range) reqHeaders.Range = req.headers.range;
 
     const rewriteM3u8 = (text, baseUrl) => {
       const hParam = req.query.h ? `&h=${encodeURIComponent(req.query.h)}` : '';
+      const toProxy = raw => {
+        try {
+          const abs = new URL(raw, baseUrl).href;
+          return `/api/proxy?url=${encodeURIComponent(abs)}${hParam}`;
+        } catch {
+          return raw;
+        }
+      };
       return String(text).split(/\r?\n/).map(line => {
         const t = line.trim();
         if (!t) return line;
         if (t.startsWith('#')) {
-          return line.replace(/URI="([^"]+)"/g, (_, uri) => {
-            const abs = new URL(uri, baseUrl).href;
-            return `URI="/api/proxy?url=${encodeURIComponent(abs)}${hParam}"`;
-          });
+          return line.replace(/URI="([^"]+)"/g, (_, uri) => `URI="${toProxy(uri)}"`);
         }
-        const abs = new URL(t, baseUrl).href;
-        return `/api/proxy?url=${encodeURIComponent(abs)}${hParam}`;
+        return toProxy(t);
       }).join('\n');
     };
 
-    const upstream = await fetch(targetUrl, {
+    const upstream = await axios.request({
       method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+      url: targetUrl,
       headers: reqHeaders,
-      redirect: 'follow',
+      responseType: 'stream',
+      timeout: 25000,
+      maxRedirects: 10,
+      validateStatus: () => true,
+      signal: ac.signal,
     });
 
-    const finalUrl = upstream.url || targetUrl;
-    const ct = (upstream.headers.get('content-type') || '').toLowerCase();
-    const isM3u8 = /\.m3u8(\?|$)/i.test(finalUrl) || ct.includes('mpegurl');
-
-    if (isM3u8 && req.method !== 'HEAD') {
-      const text = await upstream.text();
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.send(rewriteM3u8(text, finalUrl));
+    upstreamStream = upstream.data;
+    const finalUrl = upstream.request?.res?.responseUrl || targetUrl;
+    const ct = String(upstream.headers['content-type'] || '').toLowerCase();
+    const ce = upstream.headers['content-encoding'];
+    const isOk = upstream.status >= 200 && upstream.status < 300;
+    if (upstream.status >= 400) {
+      console.warn('[proxy upstream]', upstream.status, finalUrl);
     }
 
-    res.status(upstream.status);
-    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
-      const val = upstream.headers.get(h);
-      if (val) res.setHeader(h, val);
-    }
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    if (req.method === 'HEAD' || !upstream.body) return res.end();
-
-    const reader = upstream.body.getReader();
-    let closed = false;
-    res.on('close', () => {
-      closed = true;
-      reader.cancel().catch(() => {});
-    });
-    while (!closed) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!res.write(Buffer.from(value))) {
-        await new Promise(resolve => res.once('drain', resolve));
+    const sendHeaders = () => {
+      res.status(upstream.status);
+      const pass = ['content-type', 'content-range', 'accept-ranges'];
+      if (!ce) pass.push('content-length');
+      for (const h of pass) {
+        const val = upstream.headers[h];
+        if (val) res.setHeader(h, val);
       }
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+    };
+
+    const sendM3u8 = text => {
+      if (res.writableEnded || res.destroyed) return;
+      res.status(200);
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cache-Control', 'no-cache');
+      return res.send(rewriteM3u8(text, finalUrl));
+    };
+
+    const urlLooksM3u8 = /\.m3u8(\?|#|$)/i.test(finalUrl) || ct.includes('mpegurl');
+    if (urlLooksM3u8 && isOk && req.method !== 'HEAD') {
+      const chunks = [];
+      await new Promise((resolve, reject) => {
+        upstreamStream.on('data', c => chunks.push(Buffer.from(c)));
+        upstreamStream.once('end', resolve);
+        upstreamStream.once('close', resolve);
+        upstreamStream.once('error', reject);
+      });
+      return sendM3u8(Buffer.concat(chunks).toString('utf8'));
     }
-    if (!closed) res.end();
+
+    const canPeekM3u8 =
+      isOk &&
+      req.method !== 'HEAD' &&
+      upstreamStream &&
+      upstream.status !== 206 &&
+      !ct.startsWith('video/') &&
+      !ct.startsWith('audio/');
+
+    if (canPeekM3u8) {
+      const headChunks = [];
+      let headLen = 0;
+      let ended = false;
+
+      await new Promise((resolve, reject) => {
+        const cleanup = () => {
+          upstreamStream.off('data', onData);
+          upstreamStream.off('end', onEnd);
+          upstreamStream.off('close', onClose);
+          upstreamStream.off('error', onError);
+        };
+        const onData = chunk => {
+          const buf = Buffer.from(chunk);
+          headChunks.push(buf);
+          headLen += buf.length;
+          if (headLen >= 64) {
+            upstreamStream.pause();
+            cleanup();
+            resolve();
+          }
+        };
+        const onEnd = () => { ended = true; cleanup(); resolve(); };
+        const onClose = () => { ended = true; cleanup(); resolve(); };
+        const onError = err => { cleanup(); reject(err); };
+
+        upstreamStream.on('data', onData);
+        upstreamStream.once('end', onEnd);
+        upstreamStream.once('close', onClose);
+        upstreamStream.once('error', onError);
+      });
+
+      const headBuf = Buffer.concat(headChunks);
+      const headStr = headBuf
+        .toString('utf8', 0, Math.min(headBuf.length, 64))
+        .replace(/^\uFEFF/, '')
+        .trimStart();
+
+      if (headStr.startsWith('#EXTM3U')) {
+        if (!ended) {
+          await new Promise((resolve, reject) => {
+            upstreamStream.on('data', c => headChunks.push(Buffer.from(c)));
+            upstreamStream.once('end', resolve);
+            upstreamStream.once('close', resolve);
+            upstreamStream.once('error', reject);
+            upstreamStream.resume();
+          });
+        }
+        return sendM3u8(Buffer.concat(headChunks).toString('utf8'));
+      }
+
+      if (res.writableEnded || res.destroyed) return;
+      sendHeaders();
+      if (headBuf.length) res.write(headBuf);
+      if (ended) return res.end();
+      upstreamStream.on('error', err => {
+        console.error('[proxy stream error]', err.message);
+        if (!res.writableEnded) res.end();
+      });
+      upstreamStream.pipe(res);
+      upstreamStream.resume();
+      return;
+    }
+
+    sendHeaders();
+    if (req.method === 'HEAD') {
+      if (upstreamStream && typeof upstreamStream.destroy === 'function') upstreamStream.destroy();
+      return res.end();
+    }
+    upstreamStream.on('error', err => {
+      console.error('[proxy stream error]', err.message);
+      if (!res.writableEnded) res.end();
+    });
+    upstreamStream.pipe(res);
   } catch (err) {
+    if (!axios.isCancel(err) && err.name !== 'AbortError') {
+      console.error('[proxy error]', req.query.url, err.message);
+    }
     if (!res.headersSent) res.status(502).send(err.message);
-    else res.end();
+    else if (!res.writableEnded) res.end();
   }
 });
+
 app.get('*', (_, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });

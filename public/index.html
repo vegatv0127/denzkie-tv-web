@@ -906,6 +906,12 @@
       return Object.keys(s.headers || {}).filter(k => k.toLowerCase() !== 'user-agent');
     }
 
+    function isHlsStream(s) {
+      const st = String(s?.type || '').toLowerCase();
+      const sl = String(s?.link || '').toLowerCase();
+      return st === 'm3u8' || st === 'hls' || st.includes('mpegurl') || /\.m3u8(\?|#|$)/i.test(sl);
+    }
+
     async function playStream({ provider, link, type, title, sub }) {
       state.currentPlayKey = link;
       state.triedStreams.clear();
@@ -926,9 +932,9 @@
           const direct = customHeaderKeysOf(s).length === 0;
           if (srv.includes('download only')) return 99;
           if (direct && (st === 'mp4' || sl.includes('.mp4'))) return 0;
-          if (direct && (st === 'm3u8' || sl.includes('.m3u8'))) return 1;
+          if (direct && (st === 'm3u8' || st === 'hls' || sl.includes('.m3u8'))) return 1;
           if (direct) return 2;
-          if (st === 'm3u8' || sl.includes('.m3u8')) return 3;
+          if (st === 'm3u8' || st === 'hls' || sl.includes('.m3u8')) return 3;
           if (st === 'mp4' || sl.includes('.mp4')) return 4;
           return 5;
         };
@@ -952,13 +958,18 @@
       return 'WEBVTT\n\n' + srt.replace(/\r+/g, '').replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
     }
 
-    async function attachSubtitles(video, subtitles = []) {
-      video.querySelectorAll('track').forEach(t => t.remove());
+    async function attachSubtitles(video, subtitles = [], headers = {}) {
+      video.querySelectorAll('track').forEach(t => {
+        if (t.src?.startsWith('blob:')) URL.revokeObjectURL(t.src);
+        t.remove();
+      });
+      const hParam = encodeHeaders(headers);
       for (let i = 0; i < subtitles.length; i++) {
         const sub = subtitles[i];
         if (!sub?.uri) continue;
         try {
-          const res = await fetch(`/api/proxy?url=${encodeURIComponent(sub.uri)}`);
+          const res = await fetch(`/api/proxy?url=${encodeURIComponent(sub.uri)}${hParam}`);
+          if (!res.ok) continue;
           const text = await res.text();
           const vtt = text.trimStart().startsWith('WEBVTT') ? text : srtToVtt(text);
           const blobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
@@ -973,7 +984,7 @@
       }
     }
 
-    function selectStream(idx) {
+    function selectStream(idx, opts = {}) {
       document.querySelectorAll('#serverPills .chip').forEach((c, i) => c.classList.toggle('active', i === idx));
       const s = state.currentStreams[idx];
       if (!s) return;
@@ -982,10 +993,17 @@
       const video = document.getElementById('videoEl');
       const qSel = document.getElementById('qualitySelect');
       qSel.style.display = 'none';
+
+      video.onerror = null;
+      video.onloadedmetadata = null;
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
       if (state.hls) { state.hls.destroy(); state.hls = null; }
 
-      const isHls = s.type === 'm3u8' || /\.m3u8(\?|$)/i.test(s.link);
-      const needsProxy = isHls || customHeaderKeysOf(s).length > 0;
+      const isHls = opts.forceHls ? true : (opts.forceNative ? false : isHlsStream(s));
+      const isMixedContent = location.protocol === 'https:' && /^http:\/\//i.test(s.link || '');
+      const needsProxy = !!opts.forceProxy || isHls || isMixedContent || customHeaderKeysOf(s).length > 0;
       const playUrl = needsProxy
         ? `/api/proxy?url=${encodeURIComponent(s.link)}${encodeHeaders(s.headers)}`
         : s.link;
@@ -993,33 +1011,83 @@
       const prog = getStore('denzkie_progress', {});
       const savedTime = prog[state.currentPlayKey] || 0;
 
-      const handleFail = () => {
+      let failed = false;
+      const handleFail = reason => {
+        if (failed) return;
+        failed = true;
+
+        if (!needsProxy && !opts.forceProxy) {
+          document.getElementById('playerNote').innerHTML =
+            `<span style="color:#fde047;">Direct stream blocked, retrying ${esc(s.server)} via proxy...</span>`;
+          selectStream(idx, { ...opts, forceProxy: true });
+          return;
+        }
+
+        if (!isHls && !opts.triedHlsFlip && window.Hls && Hls.isSupported()) {
+          selectStream(idx, { ...opts, forceProxy: true, forceHls: true, triedHlsFlip: true });
+          return;
+        }
+
+        if (isHls && !opts.triedNativeFlip) {
+          selectStream(idx, { ...opts, forceProxy: true, forceNative: true, triedNativeFlip: true });
+          return;
+        }
+
         setVideoLoading(false);
         const nextIdx = state.currentStreams.findIndex((_, i) => !state.triedStreams.has(i));
-        if (nextIdx !== -1 && state.triedStreams.size < 3) {
+        if (nextIdx !== -1 && state.triedStreams.size < 4) {
           document.getElementById('playerNote').innerHTML =
-            `<span style="color:#fde047;">${esc(s.server)} failed, switching to ${esc(state.currentStreams[nextIdx].server)}...</span>`;
+            `<span style="color:#fde047;">${esc(s.server)} failed (${esc(reason || 'error')}), switching to ${esc(state.currentStreams[nextIdx].server)}...</span>`;
           selectStream(nextIdx);
           return;
         }
+
         const nextBtn = idx + 1 < state.currentStreams.length
           ? `<button class="btn btn-red btn-sm" onclick="selectStream(${idx + 1})">Try Next Server</button>`
           : '';
         document.getElementById('playerNote').innerHTML =
-          `<span style="color:#fca5a5;">Browser could not play ${esc(s.server)} (${esc(s.type || 'stream')}).</span>
+          `<span style="color:#fca5a5;">Could not play ${esc(s.server)} (${esc(reason || s.type || 'stream')}).</span>
            ${nextBtn}
            <a class="btn btn-ghost btn-sm" href="${esc(s.link)}" target="_blank">Open / Download in Browser</a>`;
       };
 
+      const startPlayback = () => {
+        if (savedTime > 5 && savedTime < (video.duration || Infinity) - 5) {
+          video.currentTime = savedTime;
+        }
+        const p = video.play();
+        if (p && p.catch) {
+          p.catch(err => {
+            setVideoLoading(false);
+            if (err?.name === 'NotAllowedError') {
+              document.getElementById('playerNote').innerHTML =
+                `<span>Tap <b>&#9654;</b> on the video to start playback (${esc(s.server)})</span>
+                 <a class="btn btn-ghost btn-sm" href="${esc(s.link)}" target="_blank">Open Direct URL</a>`;
+            }
+          });
+        }
+      };
+
       setVideoLoading(true, `Loading ${s.server}...`);
-      video.onerror = handleFail;
 
       if (isHls && window.Hls && Hls.isSupported()) {
-        state.hls = new Hls();
+        let recoveredMedia = false;
+        state.hls = new Hls({
+          enableWorker: true,
+          maxBufferLength: 30,
+          manifestLoadingTimeOut: 15000,
+          fragLoadingTimeOut: 20000,
+        });
         state.hls.loadSource(playUrl);
         state.hls.attachMedia(video);
         state.hls.on(Hls.Events.ERROR, (_, data) => {
-          if (data.fatal) handleFail();
+          if (!data.fatal) return;
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !recoveredMedia) {
+            recoveredMedia = true;
+            state.hls.recoverMediaError();
+            return;
+          }
+          handleFail(data.details || data.type || 'HLS error');
         });
         state.hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
           if (data.levels?.length > 1) {
@@ -1027,20 +1095,20 @@
               data.levels.map((l, i) => `<option value="${i}">${l.height ? l.height + 'p' : 'Level ' + (i + 1)}</option>`).join('');
             qSel.style.display = 'inline-block';
           }
-          if (savedTime > 5) video.currentTime = savedTime;
-          video.play().catch(() => {});
+          startPlayback();
         });
       } else {
-        video.src = playUrl;
-        video.onloadedmetadata = () => {
-          if (savedTime > 5 && savedTime < (video.duration || Infinity) - 5) {
-            video.currentTime = savedTime;
-          }
-          video.play().catch(() => {});
+        video.onerror = () => {
+          const code = video.error?.code;
+          const map = { 1: 'Aborted', 2: 'Network error', 3: 'Decode error', 4: 'Format/CORS error' };
+          handleFail(map[code] || 'Media error');
         };
+        video.onloadedmetadata = startPlayback;
+        video.src = playUrl;
+        video.load();
       }
 
-      attachSubtitles(video, s.subtitles || []);
+      attachSubtitles(video, s.subtitles || [], s.headers || {});
       onSpeedChange();
 
       document.getElementById('playerNote').innerHTML =
@@ -1065,9 +1133,12 @@
     }
 
     const _v = document.getElementById('videoEl');
-    _v.addEventListener('canplay', () => setVideoLoading(false));
-    _v.addEventListener('playing', () => setVideoLoading(false));
-    _v.addEventListener('waiting', () => setVideoLoading(true, 'Buffering...'));
+    ['loadeddata', 'canplay', 'playing', 'pause', 'ended'].forEach(ev => {
+      _v.addEventListener(ev, () => setVideoLoading(false));
+    });
+    _v.addEventListener('waiting', () => {
+      if (!_v.paused) setVideoLoading(true, 'Buffering...');
+    });
 
     let lastSave = 0;
     _v.addEventListener('timeupdate', e => {
@@ -1097,6 +1168,7 @@
       setVideoLoading(false);
       const video = document.getElementById('videoEl');
       video.onerror = null;
+      video.onloadedmetadata = null;
       video.pause();
       video.removeAttribute('src');
       video.load();
